@@ -3,7 +3,9 @@
 *.tfstate
 *.tfstate.backup
 *.tfstate.*
+# Auto-loaded tfvars (terraform automatically loads *.auto.tfvars)
 *.auto.tfvars
+# Allow the intentional terraform.tfvars defaults file
 !terraform.tfvars
 
 # NOTE: .terraform.lock.hcl is intentionally NOT ignored — it must be versioned
