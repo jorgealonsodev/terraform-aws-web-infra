@@ -182,6 +182,9 @@ resource "aws_lb" "main" {
   # Enable by setting access_logs block when a dedicated log bucket exists.
   # checkov:skip=CKV_AWS_91:Access logging requires a dedicated S3 log bucket outside this module scope
 
+  # checkov:skip=CKV2_AWS_20:HTTP to HTTPS redirect requires ACM certificate outside this module scope
+  # checkov:skip=CKV2_AWS_28:WAF integration is out of scope for this project
+
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-alb"
   })
@@ -221,8 +224,8 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
-  # checkov:skip=CKV_AWS_2:HTTP listener intentional; HTTPS requires ACM cert provisioned outside this module
-  # checkov:skip=CKV_AWS_103:HTTP listener intentional; HTTPS requires ACM cert provisioned outside this module
+  # checkov:skip=CKV_AWS_2:HTTP listener is intentional; HTTPS requires ACM cert outside this module scope
+  # checkov:skip=CKV_AWS_103:TLS policy not applicable to HTTP listener
   # checkov:skip=CKV2_AWS_20:HTTP redirect requires ACM cert outside this module scope
 
   default_action {

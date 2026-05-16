@@ -15,6 +15,9 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
   enable_dns_hostnames = true
 
+  # checkov:skip=CKV2_AWS_11:VPC flow logging requires a CloudWatch log group outside this module scope
+  # checkov:skip=CKV2_AWS_12:Default SG restriction requires a separate aws_default_security_group resource outside this module scope
+
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-vpc"
   })

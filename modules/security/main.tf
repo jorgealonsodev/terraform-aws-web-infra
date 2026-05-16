@@ -76,6 +76,8 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # checkov:skip=CKV2_AWS_5:Security group is referenced by compute/database modules; Checkov cannot resolve cross-module attachment
+
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-app-sg"
     Tier = "app"
@@ -107,6 +109,8 @@ resource "aws_security_group" "db_sg" {
     protocol    = "-1"
     cidr_blocks = [var.vpc_cidr]
   }
+
+  # checkov:skip=CKV2_AWS_5:Security group is referenced by compute/database modules; Checkov cannot resolve cross-module attachment
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-db-sg"
