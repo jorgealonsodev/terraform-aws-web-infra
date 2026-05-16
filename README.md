@@ -14,50 +14,50 @@ Infrastructure as Code (IaC) for a 3-tier web architecture on AWS using Terrafor
          |                                         |
          |   AZ-a                  AZ-b            |
          |  +-----------+        +-----------+     |
-         |  | Subred    |        | Subred    |     |  <- Subredes PÚBLICAS
-         |  | pública   |        | pública   |     |     (ALB + NAT Gateway)
+         |  | Subnet    |        | Subnet    |     |  <- PUBLIC Subnets
+         |  | public    |        | public    |     |     (ALB + NAT Gateway)
          |  |  [ ALB ]  |        |  [ ALB ]  |     |
          |  +-----+-----+        +-----+-----+     |
          |        |                    |          |
          |  +-----v-----+        +-----v-----+     |
-         |  | Subred    |        | Subred    |     |  <- Subredes PRIVADAS
-         |  | privada   |        | privada   |     |     (EC2 en Auto Scaling Group)
+         |  | Subnet    |        | Subnet    |     |  <- PRIVATE Subnets
+         |  | private   |        | private   |     |     (EC2 in Auto Scaling Group)
          |  | [ EC2 ]   |        | [ EC2 ]   |     |
          |  +-----+-----+        +-----+-----+     |
          |        |                    |          |
          |  +-----v-----+        +-----v-----+     |
-         |  | Subred    |        | Subred    |     |  <- Subredes BBDD (aisladas)
-         |  | BBDD      |        | BBDD      |     |     (RDS Multi-AZ en prod)
+         |  | Subnet    |        | Subnet    |     |  <- DATABASE Subnets (isolated)
+         |  | database  |        | database  |     |     (RDS Multi-AZ in prod)
          |  +-----------+        +-----------+     |
          +-----------------------------------------+
 
-         [ S3 Bucket ]  <- almacenamiento de objetos (assets / logs)
+         [ S3 Bucket ]  <- object storage (assets / logs)
 ```
 
-**Flujo de tráfico:**
+**Traffic flow:**
 
-1. El tráfico entrante llega al **Application Load Balancer** en las subredes públicas.
-2. El ALB reparte la carga entre las instancias **EC2** del **Auto Scaling Group** ubicadas en las subredes privadas.
-3. Las instancias acceden a **RDS** en las subredes de base de datos, aisladas y sin salida a internet.
-4. Las instancias obtienen salida a internet a través del **NAT Gateway**.
-5. **S3** proporciona almacenamiento de objetos para activos estáticos y logs.
+1. Inbound traffic reaches the **Application Load Balancer** in the public subnets.
+2. The ALB distributes load across the **EC2** instances in the **Auto Scaling Group**, located in the private subnets.
+3. Instances access **RDS** in the database subnets, which are isolated with no internet access.
+4. Instances reach the internet (system updates, etc.) through the **NAT Gateway**.
+5. **S3** provides object storage for static assets and logs.
 
-## Stack y requisitos previos
+## Stack and Prerequisites
 
 - **Terraform** >= 1.7
 - **AWS Provider** ~> 5.x
-- **Región**: eu-west-1 (por defecto)
-- **terraform-docs** — documentación de módulos
-- **tflint** — linting de Terraform
-- **Docker** (opcional, para ejecución de Terraform vía imagen `hashicorp/terraform`)
+- **Region**: eu-west-1 (default)
+- **terraform-docs** — module documentation
+- **tflint** — Terraform linting
+- **Docker** (optional, for running Terraform via the `hashicorp/terraform` image)
 
-### Prerrequisitos
+### Prerequisites
 
-- AWS CLI configurado con credenciales adecuadas
-- Cuenta AWS con permisos para crear VPC, EC2, RDS, S3, IAM, DynamoDB
-- Docker (si se usa el Makefile con contenedores)
+- AWS CLI configured with appropriate credentials
+- AWS account with permissions to create VPC, EC2, RDS, S3, IAM, DynamoDB
+- Docker (if using containers)
 
-## Estructura del repositorio
+## Repository Structure
 
 ```
 terraform-aws-web-infra/
@@ -70,154 +70,154 @@ terraform-aws-web-infra/
 ├── versions.tf
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                  # Pipeline de CI (fmt, validate, lint, security)
+│       └── ci.yml                  # CI pipeline (fmt, validate, lint, security)
 ├── docs/
-│   ├── ARCHITECTURE.md             # Descripción detallada de la arquitectura
-│   └── COSTS.md                    # Estimación de costes por entorno
+│   ├── ARCHITECTURE.md             # Detailed architecture description
+│   └── COSTS.md                    # Cost estimates per environment
 ├── scripts/
-│   ├── bootstrap-backend.sh        # Crea bucket S3 + tabla DynamoDB del estado
-│   └── gen-docs.sh                 # Ejecuta terraform-docs en todos los módulos
+│   ├── bootstrap-backend.sh        # Creates S3 bucket + DynamoDB state table
+│   └── gen-docs.sh                 # Runs terraform-docs on all modules
 ├── modules/
-│   ├── networking/                 # VPC, subredes, gateways, routing
+│   ├── networking/                 # VPC, subnets, gateways, routing
 │   ├── security/                   # Security Groups (ALB, App, DB)
 │   ├── compute/                    # ALB, ASG, Launch Template, IAM
 │   ├── database/                   # RDS + Secrets Manager
-│   └── storage/                    # S3 bucket (endurecido)
+│   └── storage/                    # S3 bucket (hardened)
 └── environments/
-    ├── dev/                        # Entorno de desarrollo
-    ├── staging/                    # Entorno de staging
-    └── prod/                       # Entorno de producción
+    ├── dev/                        # Development environment
+    ├── staging/                    # Staging environment
+    └── prod/                       # Production environment
 ```
 
-## Guía de despliegue
+## Deployment Guide
 
-### Paso 1: Configurar credenciales de AWS
+### Step 1: Configure AWS credentials
 
 ```bash
-# Opción A: AWS CLI configurado
+# Option A: AWS CLI configured
 aws configure
 
-# Opción B: Variables de entorno
+# Option B: Environment variables
 export AWS_ACCESS_KEY_ID="your-access-key"
 export AWS_SECRET_ACCESS_KEY="your-secret-key"
 export AWS_DEFAULT_REGION="eu-west-1"
 ```
 
-### Paso 2: Crear el backend remoto
+### Step 2: Create the remote backend
 
-Ejecutar el script de bootstrap **una sola vez** antes del primer `terraform init`:
+Run the bootstrap script **once** before the first `terraform init`:
 
 ```bash
 ./scripts/bootstrap-backend.sh
 ```
 
-Este script crea:
-- Un bucket S3 versionado y cifrado para almacenar el estado
-- Una tabla DynamoDB para el bloqueo de estado (evita escrituras concurrentes)
+This script creates:
+- A versioned and encrypted S3 bucket for state storage
+- A DynamoDB table for state locking (prevents concurrent writes)
 
-> El script es idempotente: si el bucket y la tabla ya existen, no produce error.
+> The script is idempotent: if the bucket and table already exist, it does not error.
 
-### Paso 3: Configurar el backend
+### Step 3: Configure the backend
 
-Editar `environments/dev/backend.tf` y reemplazar los placeholders:
-- `bucket` — nombre del bucket S3 creado en el paso 2
-- `dynamodb_table` — nombre de la tabla DynamoDB creada en el paso 2
+Edit `environments/dev/backend.tf` and replace the placeholders:
+- `bucket` — name of the S3 bucket created in step 2
+- `dynamodb_table` — name of the DynamoDB table created in step 2
 
-Repetir para `staging` y `prod`.
+Repeat for `staging` and `prod`.
 
-### Paso 4: Desplegar el entorno
+### Step 4: Deploy the environment
 
 ```bash
-# Inicializar Terraform
+# Initialize Terraform
 cd environments/dev
 terraform init
 
-# Revisar el plan
+# Review the plan
 terraform plan
 
-# Aplicar los cambios
+# Apply the changes
 terraform apply
 ```
 
-### Paso 5: Verificar el despliegue
+### Step 5: Verify the deployment
 
-Tras el `apply`, los outputs muestran información clave:
+After `apply`, the outputs show key information:
 
 ```bash
-# El DNS del ALB (punto de entrada de la aplicación)
+# The ALB DNS name (application entry point)
 terraform output alb_dns_name
 
-# El ARN del secreto de la base de datos
+# The database secret ARN
 terraform output db_secret_arn
 ```
 
-Acceder al DNS del ALB en un navegador para verificar que nginx responde correctamente.
+Open the ALB DNS in a browser to verify nginx is responding correctly.
 
-### Desplegar staging y prod
+### Deploy staging and prod
 
 ```bash
 cd environments/staging && terraform init && terraform plan && terraform apply
 cd environments/prod    && terraform init && terraform plan && terraform apply
 ```
 
-## Destrucción de entornos
+## Destroying Environments
 
-> **Atención:** `terraform destroy` elimina **todos** los recursos del entorno.
-> Esta acción es **irreversible**. Asegurarse de tener backups antes de destruir.
+> **Warning:** `terraform destroy` removes **all** resources in the environment.
+> This action is **irreversible**. Make sure you have backups before destroying.
 
 ```bash
 cd environments/dev
 terraform destroy
 ```
 
-### Aviso sobre costes
+### Cost Notice
 
-Los recursos **NAT Gateway** y **Application Load Balancer** se facturan por hora,
-incluso sin tráfico (~16-35 USD/mes cada uno). Si no se va a usar un entorno
-durante un periodo prolongado, ejecutar `terraform destroy` para evitar costes innecesarios.
+**NAT Gateway** and **Application Load Balancer** are billed by the hour,
+even with no traffic (~16-35 USD/month each). If an environment will not be used
+for an extended period, run `terraform destroy` to avoid unnecessary costs.
 
-Consultar [docs/COSTS.md](docs/COSTS.md) para estimaciones detalladas por entorno.
+See [docs/COSTS.md](docs/COSTS.md) for detailed estimates per environment.
 
-## Documentación adicional
+## Additional Documentation
 
-- [Arquitectura](docs/ARCHITECTURE.md) — Descripción detallada, decisiones de diseño y trade-offs
-- [Costes estimados](docs/COSTS.md) — Estimación mensual por recurso y por entorno
-- [Documentación de módulos](modules/) — Cada módulo tiene su propio README con inputs, outputs y recursos
+- [Architecture](docs/ARCHITECTURE.md) — Detailed description, design decisions, and trade-offs
+- [Cost Estimates](docs/COSTS.md) — Monthly estimate per resource and per environment
+- [Module Documentation](modules/) — Each module has its own README with inputs, outputs, and resources
 
-## Decisiones de diseño y trade-offs
+## Design Decisions and Trade-offs
 
-| Decisión | Razón | Trade-off |
-|----------|-------|-----------|
-| 3 niveles de subredes | Aislamiento de seguridad entre capas | Mayor complejidad de red |
-| Single NAT en dev/staging | Reduce coste (~33 USD/mes por NAT) | Punto único de fallo fuera de prod |
-| Multi-AZ RDS solo en prod | Alta disponibilidad donde importa | Coste duplicado de RDS |
-| Security groups por ID | Funciona con IPs dinámicas del ASG | Reglas más complejas de auditar |
-| Contraseña autogenerada | Sin secretos en el repositorio | Requiere acceso a Secrets Manager |
-| Estado remoto con lock | Trabajo en equipo sin conflictos | Dependencia de S3 + DynamoDB |
+| Decision | Reason | Trade-off |
+|----------|--------|-----------|
+| 3 subnet tiers | Security isolation between layers | Higher network complexity |
+| Single NAT in dev/staging | Reduces cost (~33 USD/month per NAT) | Single point of failure outside prod |
+| Multi-AZ RDS only in prod | High availability where it matters | Doubled RDS cost |
+| Security groups by ID | Works with dynamic ASG IPs | Rules harder to audit |
+| Auto-generated password | No secrets in the repository | Requires Secrets Manager access |
+| Remote state with locking | Team collaboration without conflicts | Dependency on S3 + DynamoDB |
 
-## Alcance
+## Scope
 
-### Incluido en esta fase
+### Included in this phase
 
-- Arquitectura web de 3 niveles (ALB → EC2 → RDS) con módulos reutilizables
-- 3 entornos (dev, staging, prod) con configuración específica por entorno
-- Estado remoto en S3 con bloqueo en DynamoDB
-- Security groups con aislamiento entre capas
-- Bucket S3 endurecido con versionado y cifrado
-- RDS con contraseña autogenerada y almacenamiento en Secrets Manager
-- Auto Scaling Group con política de escalado por CPU
-- Pipeline de CI con validación de formato, sintaxis, linting y seguridad
-- Documentación de costes y arquitectura
+- 3-tier web architecture (ALB → EC2 → RDS) with reusable modules
+- 3 environments (dev, staging, prod) with environment-specific configuration
+- Remote state in S3 with DynamoDB locking
+- Security groups with inter-tier isolation
+- Hardened S3 bucket with versioning and encryption
+- RDS with auto-generated password stored in Secrets Manager
+- Auto Scaling Group with CPU-based scaling policy
+- CI pipeline with format, syntax, linting, and security validation
+- Cost and architecture documentation
 
-### Fuera de alcance (fases posteriores)
+### Out of scope (future phases)
 
-- Terminación HTTPS en el ALB con certificado ACM y dominio en Route 53
-- Pipeline de entrega: `terraform plan` automático en cada PR con `apply` manual
-- Migración de EC2 + ASG a contenedores (ECS Fargate o EKS)
-- Autenticación OIDC en el CI en lugar de claves de acceso estáticas
-- Módulo de observabilidad: dashboards y alarmas en CloudWatch
-- Pruebas automatizadas de infraestructura con Terratest
+- HTTPS termination on the ALB with ACM certificate and Route 53 domain
+- Delivery pipeline: automatic `terraform plan` on each PR with manual `apply`
+- Migrating EC2 + ASG to containers (ECS Fargate or EKS)
+- OIDC authentication in CI instead of static access keys
+- Observability module: CloudWatch dashboards and alarms
+- Automated infrastructure tests with Terratest
 
-## Licencia
+## License
 
 MIT

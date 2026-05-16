@@ -1,78 +1,78 @@
-# Estimación de costes
+# Cost Estimates
 
-> Cifras orientativas para la región **eu-west-1 (Irlanda)**, mayo 2026.
-> Verificar siempre con la [AWS Pricing Calculator](https://calculator.aws/#/).
-> Los precios pueden variar.
+> Indicative figures for the **eu-west-1 (Ireland)** region, May 2026.
+> Always verify with the [AWS Pricing Calculator](https://calculator.aws/#/).
+> Prices may vary.
 
-## Resumen por entorno (USD/mes, aprox.)
+## Summary per Environment (USD/month, approx.)
 
-| Entorno | Encendido de forma continua | Destruido tras su uso |
-|---------|-----------------------------|------------------------|
-| dev     | ~60-80                      | ~0                     |
-| staging | ~60-80                      | ~0                     |
-| prod    | ~150-200                    | n/a                    |
+| Environment | Running continuously | Destroyed after use |
+|-------------|---------------------|----------------------|
+| dev         | ~60-80              | ~0                   |
+| staging     | ~60-80              | ~0                   |
+| prod        | ~150-200            | n/a                  |
 
-> **Nota:** Los rangos reflejan la variación en tráfico (LCU del ALB) y uso de datos del NAT Gateway.
+> **Note:** The ranges reflect variation in traffic (ALB LCUs) and NAT Gateway data usage.
 
-## Desglose detallado (entorno dev)
+## Detailed Breakdown (dev environment)
 
-| Recurso | Cantidad | Capa gratuita | Coste fuera de capa gratuita |
-|---------|----------|---------------|------------------------------|
-| EC2 t3.micro | 1 | 750 h/mes (t2/t3.micro, 12 meses primeros) | ~0 USD/mes (dentro de capa gratuita si aplica) |
-| ALB | 1 | **No** | ~16 USD/mes (horas) + LCU variable (~0-10 USD) |
-| NAT Gateway | 1 | **No** | ~32 USD/mes (horas) + datos procesados (~0-5 USD) |
-| RDS db.t3.micro | 1 | 750 h/mes (primeros 12 meses) | ~0 USD/mes (dentro de capa gratuita si aplica) |
-| EBS gp3 (20 GB) | 1 | — | ~1.60 USD/mes |
-| S3 Standard | 1 | 5 GB | despreciable (< 0.03 USD/mes) |
-| DynamoDB (lock table) | 1 | 25 WCU + 25 RCU | ~0 USD/mes (dentro de capa gratuita) |
-| Elastic IP | 1 | 1 asociada | ~0 USD/mes |
-| Secrets Manager | 1 | — | ~0.40 USD/mes |
-| **Total estimado** | | | **~50-65 USD/mes** |
+| Resource | Quantity | Free tier | Cost outside free tier |
+|----------|----------|-----------|-------------------------|
+| EC2 t3.micro | 1 | 750 hrs/month (t2/t3.micro, first 12 months) | ~0 USD/month (within free tier if applicable) |
+| ALB | 1 | **No** | ~16 USD/month (hours) + variable LCU (~0-10 USD) |
+| NAT Gateway | 1 | **No** | ~32 USD/month (hours) + data processed (~0-5 USD) |
+| RDS db.t3.micro | 1 | 750 hrs/month (first 12 months) | ~0 USD/month (within free tier if applicable) |
+| EBS gp3 (20 GB) | 1 | — | ~1.60 USD/month |
+| S3 Standard | 1 | 5 GB | negligible (< 0.03 USD/month) |
+| DynamoDB (lock table) | 1 | 25 WCU + 25 RCU | ~0 USD/month (within free tier) |
+| Elastic IP | 1 | 1 attached | ~0 USD/month |
+| Secrets Manager | 1 | — | ~0.40 USD/month |
+| **Estimated total** | | | **~50-65 USD/month** |
 
-### Aviso importante: NAT Gateway y ALB
+### Important: NAT Gateway and ALB
 
-**NAT Gateway** y **Application Load Balancer** **NO entran en la capa gratuita** de AWS.
-Son el mayor componente de coste de esta infraestructura:
+**NAT Gateway** and **Application Load Balancer** are **NOT included in the AWS free tier**.
+They are the largest cost component of this infrastructure:
 
-- **NAT Gateway**: ~0.045 USD/hora × 730 h ≈ **32.85 USD/mes** + coste por datos procesados.
-- **ALB**: ~0.0225 USD/hora × 730 h ≈ **16.43 USD/mes** + coste por LCU (Load Balancer Capacity Units).
+- **NAT Gateway**: ~0.045 USD/hour × 730 hrs ≈ **32.85 USD/month** + data processing cost.
+- **ALB**: ~0.0225 USD/hour × 730 hrs ≈ **16.43 USD/month** + LCU (Load Balancer Capacity Units) cost.
 
-Estos recursos se facturan por hora, independientemente de si hay tráfico o no.
+These resources are billed by the hour, regardless of whether there is traffic or not.
 
-## Entorno staging
+## Staging Environment
 
-Similar a dev pero con ASG de 2-3 instancias (en lugar de 1-2):
+Similar to dev but with an ASG of 2-3 instances (instead of 1-2):
 
-| Recurso | Diferencia vs dev | Coste adicional |
-|---------|-------------------|-----------------|
-| EC2 t3.micro | +1 instancia adicional | ~0 USD (capa gratuita) |
-| EBS gp3 | +20 GB | ~1.60 USD/mes |
-| ALB + NAT | Igual | Igual |
-| **Total estimado** | | **~52-67 USD/mes** |
+| Resource | Difference vs dev | Additional cost |
+|----------|-------------------|-----------------|
+| EC2 t3.micro | +1 additional instance | ~0 USD (free tier) |
+| EBS gp3 | +20 GB | ~1.60 USD/month |
+| ALB + NAT | Same | Same |
+| **Estimated total** | | **~52-67 USD/month** |
 
-## Entorno prod
+## Production Environment
 
-Configuración de producción con alta disponibilidad:
+Production configuration with high availability:
 
-| Recurso | Cantidad | Coste estimado |
-|---------|----------|----------------|
-| EC2 t3.small | 2-6 | ~15-45 USD/mes (fuera de capa gratuita) |
-| ALB | 1 | ~16 USD/mes + LCU |
-| NAT Gateway × 2 | 2 | ~65 USD/mes + datos |
-| RDS db.t3.small (Multi-AZ) | 1 | ~35 USD/mes |
-| EBS gp3 (20 GB × 2) | 2 | ~3.20 USD/mes |
-| S3 Standard | 1 | despreciable |
-| Secrets Manager | 1 | ~0.40 USD/mes |
-| **Total estimado** | | **~135-195 USD/mes** |
+| Resource | Quantity | Estimated cost |
+|----------|----------|----------------|
+| EC2 t3.small | 2-6 | ~15-45 USD/month (outside free tier) |
+| ALB | 1 | ~16 USD/month + LCU |
+| NAT Gateway × 2 | 2 | ~65 USD/month + data |
+| RDS db.t3.small (Multi-AZ) | 1 | ~35 USD/month |
+| EBS gp3 (20 GB × 2) | 2 | ~3.20 USD/month |
+| S3 Standard | 1 | negligible |
+| Secrets Manager | 1 | ~0.40 USD/month |
+| **Estimated total** | | **~135-195 USD/month** |
 
-## Recomendaciones para controlar el gasto
+## Recommendations for Cost Control
 
-1. **Destruir entornos no productivos cuando no se usen.** Ejecutar `terraform destroy` en `dev` y `staging` al final de cada jornada de desarrollo elimina el coste por completo.
-2. **Usar `single_nat_gateway = true` fuera de producción.** Un único NAT Gateway es suficiente para dev/staging y reduce el coste a la mitad.
-3. **Programar destrucción automática.** Considerar un script o pipeline que destruya entornos de desarrollo tras N horas de inactividad.
-4. **Monitorizar con AWS Cost Explorer.** Configurar alertas de presupuesto para detectar desviaciones tempranas.
+1. **Destroy non-production environments when not in use.** Running `terraform destroy` in `dev` and `staging` at the end of each development day eliminates cost entirely.
+2. **Use `single_nat_gateway = true` outside production.** A single NAT Gateway is enough for dev/staging and cuts the cost in half.
+3. **Schedule automatic destruction.** Consider a script or pipeline that destroys development environments after N hours of inactivity.
+4. **Monitor with AWS Cost Explorer.** Set up budget alerts to detect deviations early.
 
-## Enlaces útiles
+## Useful Links
 
 - [AWS Pricing Calculator](https://calculator.aws/#/)
 - [AWS Free Tier](https://aws.amazon.com/free/)
@@ -80,10 +80,10 @@ Configuración de producción con alta disponibilidad:
 
 ## Disclaimer
 
-Las cifras de este documento son **estimaciones orientativas** basadas en precios públicos de AWS para la región eu-west-1 a mayo 2026. Los precios reales pueden variar según:
+The figures in this document are **indicative estimates** based on public AWS pricing for the eu-west-1 region as of May 2026. Actual prices may vary depending on:
 
-- Tráfico real (LCU del ALB, datos del NAT Gateway)
-- Cambios de precios por parte de AWS
-- Impuestos y descuentos por volumen (Enterprise Discount Program, Reserved Instances, etc.)
+- Real traffic (ALB LCUs, NAT Gateway data)
+- AWS price changes
+- Taxes and volume discounts (Enterprise Discount Program, Reserved Instances, etc.)
 
-**Verificar siempre los costes actualizados antes de tomar decisiones de infraestructura.**
+**Always verify current costs before making infrastructure decisions.**

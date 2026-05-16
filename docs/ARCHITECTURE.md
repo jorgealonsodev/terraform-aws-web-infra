@@ -1,12 +1,12 @@
-# Arquitectura
+# Architecture
 
-## Descripción general
+## Overview
 
-Este proyecto implementa una **arquitectura web de 3 niveles** sobre AWS usando Terraform.
-El diseño separa las capas de presentación, aplicación y datos en subredes aisladas para
-maximizar la seguridad y la disponibilidad.
+This project implements a **3-tier web architecture** on AWS using Terraform.
+The design separates the presentation, application, and data layers into isolated subnets
+to maximize security and availability.
 
-## Diagrama de arquitectura
+## Architecture Diagram
 
 ```
                            Internet
@@ -18,97 +18,104 @@ maximizar la seguridad y la disponibilidad.
          |                                         |
          |   AZ-a                  AZ-b            |
          |  +-----------+        +-----------+     |
-         |  | Subred    |        | Subred    |     |  <- Subredes PÚBLICAS
-         |  | pública   |        | pública   |     |     (ALB + NAT Gateway)
+         |  | Subnet    |        | Subnet    |     |  <- PUBLIC Subnets
+         |  | public    |        | public    |     |     (ALB + NAT Gateway)
          |  |  [ ALB ]  |        |  [ ALB ]  |     |
          |  +-----+-----+        +-----+-----+     |
          |        |                    |          |
          |  +-----v-----+        +-----v-----+     |
-         |  | Subred    |        | Subred    |     |  <- Subredes PRIVADAS
-         |  | privada   |        | privada   |     |     (EC2 en Auto Scaling Group)
+         |  | Subnet    |        | Subnet    |     |  <- PRIVATE Subnets
+         |  | private   |        | private   |     |     (EC2 in Auto Scaling Group)
          |  | [ EC2 ]   |        | [ EC2 ]   |     |
          |  +-----+-----+        +-----+-----+     |
          |        |                    |          |
          |  +-----v-----+        +-----v-----+     |
-         |  | Subred    |        | Subred    |     |  <- Subredes BBDD (aisladas)
-         |  | BBDD      |        | BBDD      |     |     (RDS Multi-AZ en prod)
+         |  | Subnet    |        | Subnet    |     |  <- DATABASE Subnets (isolated)
+         |  | database  |        | database  |     |     (RDS Multi-AZ in prod)
          |  +-----------+        +-----------+     |
          +-----------------------------------------+
 
-         [ S3 Bucket ]  <- almacenamiento de objetos (assets / logs)
+         [ S3 Bucket ]  <- object storage (assets / logs)
 ```
 
-## Flujo de tráfico
+## Traffic Flow
 
-1. El tráfico entrante llega al **Application Load Balancer (ALB)** en las subredes públicas.
-2. El ALB reparte la carga entre las instancias **EC2** del **Auto Scaling Group** ubicadas en las subredes privadas.
-3. Las instancias acceden a **RDS** en las subredes de base de datos, que están aisladas y sin salida directa a internet.
-4. Las instancias obtienen salida a internet (actualizaciones de sistema, etc.) a través del **NAT Gateway**.
-5. **S3** proporciona almacenamiento de objetos para activos estáticos y logs.
+1. Inbound traffic reaches the **Application Load Balancer (ALB)** in the public subnets.
+2. The ALB distributes load across the **EC2** instances in the **Auto Scaling Group**, located in the private subnets.
+3. Instances access **RDS** in the database subnets, which are isolated with no direct internet access.
+4. Instances reach the internet (system updates, etc.) through the **NAT Gateway**.
+5. **S3** provides object storage for static assets and logs.
 
-## Decisiones de diseño y trade-offs
+## Design Decisions and Trade-offs
 
-### Subredes de 3 niveles
+### 3-tier subnet architecture
 
-**Decisión:** Separar en subredes públicas, privadas y de base de datos.
+**Decision:** Separate into public, private, and database subnets.
 
-**Por qué:** El aislamiento entre capas reduce la superficie de ataque. Un atacante que comprometa el ALB no tiene acceso directo a las instancias EC2 ni a la base de datos.
+**Why:** Layer isolation reduces the attack surface. An attacker compromising the ALB has no direct access to EC2 instances or the database.
 
-**Trade-off:** Mayor complejidad de red y más recursos (tablas de ruta, subredes) que una arquitectura plana.
+**Trade-off:** Higher network complexity and more resources (route tables, subnets) compared to a flat architecture.
 
 ### NAT Gateway: single vs multi-AZ
 
-**Decisión:** Un único NAT Gateway en dev/staging, uno por AZ en prod.
+**Decision:** A single NAT Gateway in dev/staging, one per AZ in prod.
 
-**Por qué:** El NAT Gateway cuesta ~33 USD/mes. En entornos no productivos, el ahorro justifica el riesgo de un punto único de fallo. En producción, la disponibilidad es prioritaria.
+**Why:** NAT Gateway costs ~33 USD/month. In non-production environments, the savings justify the risk of a single point of failure. In production, availability takes priority.
 
-**Trade-off:** Si el único NAT Gateway falla en dev/staging, las instancias privadas pierden acceso a internet hasta que se recupere.
+**Trade-off:** If the single NAT Gateway fails in dev/staging, private instances lose internet access until it recovers.
 
 ### RDS: single-AZ vs Multi-AZ
 
-**Decisión:** RDS single-AZ en dev/staging, Multi-AZ en prod.
+**Decision:** RDS single-AZ in dev/staging, Multi-AZ in prod.
 
-**Por qué:** Multi-AZ duplica el coste de la instancia RDS. En producción, el failover automático justifica el coste adicional.
+**Why:** Multi-AZ doubles the RDS instance cost. In production, automatic failover justifies the additional cost.
 
-**Trade-off:** En dev/staging, una indisponibilidad de AZ implica que la base de datos no está disponible hasta que AWS la recupere.
+**Trade-off:** In dev/staging, an AZ outage means the database is unavailable until AWS recovers it.
 
-### Security Groups por referencia (no por CIDR)
+### Security Groups by reference (not by CIDR)
 
-**Decisión:** Los security groups se referencian entre sí por ID, no por rango de IPs.
+**Decision:** Security groups reference each other by ID, not by IP range.
 
-**Por qué:** Las IPs de las instancias EC2 pueden cambiar (auto-scaling). Referenciar por security group ID mantiene las reglas correctas independientemente de las IPs.
+**Why:** EC2 instance IPs can change (auto-scaling). Referencing by security group ID keeps rules correct regardless of IPs.
 
-### Contraseñas gestionadas automáticamente
+**Trade-off:** Rules are harder to audit than flat CIDR-based rules.
 
-**Decisión:** La contraseña de RDS se genera con `random_password` y se almacena en AWS Secrets Manager.
+### Passwords managed automatically
 
-**Por qué:** Evita versionar secretos en el repositorio y garantiza contraseñas fuertes y únicas por despliegue.
+**Decision:** The RDS password is generated with `random_password` and stored in AWS Secrets Manager.
 
-### Estado remoto con bloqueo
+**Why:** Avoids versioning secrets in the repository and ensures strong, unique passwords per deployment.
 
-**Decisión:** Backend S3 + DynamoDB para el estado de Terraform.
+**Trade-off:** Secrets Manager costs ~0.40 USD/month per secret and requires IAM access.
 
-**Por qué:** Permite trabajo en equipo sin conflictos de estado y protege contra escrituras concurrentes mediante el lock de DynamoDB.
+### Remote state with locking
 
-## Descripción de los módulos
+**Decision:** S3 backend + DynamoDB for Terraform state.
 
-| Módulo | Descripción |
+**Why:** Enables team collaboration without state conflicts and protects against concurrent writes via DynamoDB locking.
+
+**Trade-off:** Adds a dependency on S3 and DynamoDB before any `terraform init` can succeed.
+
+## Module Descriptions
+
+| Module | Description |
 |--------|-------------|
-| **networking** | VPC, subredes (pública/privada/BBDD), Internet Gateway, NAT Gateway(s), tablas de ruta, DB subnet group |
-| **security** | Security Groups para ALB, App y DB con aislamiento entre capas |
-| **storage** | Bucket S3 endurecido con versionado, cifrado, bloqueo público y reglas de ciclo de vida |
-| **database** | Instancia RDS PostgreSQL con cifrado, contraseña autogenerada y almacenamiento en Secrets Manager |
-| **compute** | ALB, Launch Template (Amazon Linux 2023), Auto Scaling Group, rol IAM, política de escalado por CPU |
+| **networking** | VPC, subnets (public/private/database), Internet Gateway, NAT Gateway(s), route tables, DB subnet group |
+| **security** | Security Groups for ALB, App, and DB with inter-tier isolation |
+| **storage** | Hardened S3 bucket with versioning, encryption, public access blocking, and lifecycle rules |
+| **database** | RDS PostgreSQL instance with encryption, auto-generated password, and Secrets Manager storage |
+| **compute** | ALB, Launch Template (Amazon Linux 2023), Auto Scaling Group, IAM role, CPU-based scaling policy |
 
-## Entornos
+## Environments
 
-| Parámetro | dev | staging | prod |
+| Parameter | dev | staging | prod |
 |-----------|-----|---------|------|
 | VPC CIDR | `10.0.0.0/16` | `10.1.0.0/16` | `10.2.0.0/16` |
 | NAT Gateway | Single | Single | Multi-AZ |
 | EC2 Instance | t3.micro | t3.micro | t3.small |
+| ASG min/desired/max | 1/1/2 | 1/2/3 | 2/2/6 |
 | RDS Instance | db.t3.micro | db.t3.micro | db.t3.small |
 | RDS Multi-AZ | No | No | Yes |
 
-Cada entorno invoca los mismos módulos con diferentes valores de `terraform.tfvars`.
-No hay lógica de infraestructura en los directorios de entorno — solo configuración.
+Each environment invokes the same modules with different `terraform.tfvars` values.
+There is no infrastructure logic in the environment directories — configuration only.
