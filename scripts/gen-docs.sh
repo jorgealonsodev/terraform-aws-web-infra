@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
-# Placeholder: Documentation generation script (F9)
-# This script will run terraform-docs on each module.
-# See F9 implementation for the full script.
+# gen-docs.sh — Regenerate terraform-docs for all modules.
+# Usage: ./scripts/gen-docs.sh
+# Requires Docker with the terraform-docs image available.
 set -euo pipefail
-echo "Documentation generation script — to be implemented in F9."
+
+MODULES_DIR="modules"
+
+for mod in "$MODULES_DIR"/*/; do
+  if [ -f "${mod}main.tf" ]; then
+    echo "Generating docs for: $mod"
+    docker run --rm -v "$(pwd):/workspace" -w "/workspace/$mod" \
+      quay.io/terraform-docs/terraform-docs:latest markdown table \
+      --output-file README.md --output-mode inject /workspace/"$mod"
+  fi
+done
+
+echo "Done. Module docs regenerated."
