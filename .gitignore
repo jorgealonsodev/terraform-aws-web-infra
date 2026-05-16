@@ -1,0 +1,25 @@
+# Terraform state and lock files
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.*
+*.tfvars
+
+# NOTE: .terraform.lock.hcl is intentionally NOT ignored — it must be versioned
+# to ensure reproducible provider versions across environments and CI.
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets and credentials
+*.pem
+*.key
+credentials
