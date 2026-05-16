@@ -184,6 +184,7 @@ resource "aws_lb" "main" {
 
   # checkov:skip=CKV2_AWS_20:HTTP to HTTPS redirect requires ACM certificate outside this module scope
   # checkov:skip=CKV2_AWS_28:WAF integration is out of scope for this project
+  # checkov:skip=CKV_AWS_150:Deletion protection is environment-controlled via var.enable_deletion_protection
 
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-alb"

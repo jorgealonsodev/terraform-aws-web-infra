@@ -61,6 +61,8 @@ resource "aws_db_instance" "main" {
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
   # Lifecycle
+  # checkov:skip=CKV_AWS_293:Deletion protection is environment-controlled via var.deletion_protection (true in prod)
+  # checkov:skip=CKV_AWS_353:Performance Insights adds cost; not required for this project scope
   deletion_protection        = var.deletion_protection
   auto_minor_version_upgrade = true
   skip_final_snapshot        = var.skip_final_snapshot
