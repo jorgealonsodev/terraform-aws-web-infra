@@ -71,6 +71,7 @@ jobs:
         with:
           directory: .
           framework: terraform
+          config_file: .checkov.yaml
 
       - name: Terraform Docs check
         uses: terraform-docs/gh-actions@v1
