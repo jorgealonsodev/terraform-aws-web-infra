@@ -53,6 +53,7 @@ No modules.
 | <a name="input_app_port"></a> [app\_port](#input\_app\_port) | Application port for the target group and health check | `number` | `80` | no |
 | <a name="input_app_sg_id"></a> [app\_sg\_id](#input\_app\_sg\_id) | ID of the application security group (from security module) | `string` | n/a | yes |
 | <a name="input_desired_capacity"></a> [desired\_capacity](#input\_desired\_capacity) | Desired number of instances in the ASG | `number` | `1` | no |
+| <a name="input_enable_deletion_protection"></a> [enable\_deletion\_protection](#input\_enable\_deletion\_protection) | Enable deletion protection on the ALB | `bool` | `false` | no |
 | <a name="input_environment"></a> [environment](#input\_environment) | Deployment environment (dev, staging, or prod) | `string` | n/a | yes |
 | <a name="input_instance_type"></a> [instance\_type](#input\_instance\_type) | EC2 instance type for the launch template | `string` | `"t3.micro"` | no |
 | <a name="input_max_size"></a> [max\_size](#input\_max\_size) | Maximum number of instances in the ASG | `number` | `2` | no |
