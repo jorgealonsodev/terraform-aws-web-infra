@@ -1,0 +1,76 @@
+name: Terraform CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init (modules)
+        run: |
+          for mod in modules/*/; do
+            if [ -f "${mod}main.tf" ]; then
+              echo "Init: $mod"
+              cd "$mod" && terraform init -backend=false && cd -
+            fi
+          done
+
+      - name: Terraform validate (modules)
+        run: |
+          for mod in modules/*/; do
+            if [ -f "${mod}main.tf" ]; then
+              echo "Validate: $mod"
+              cd "$mod" && terraform validate && cd -
+            fi
+          done
+
+      - name: Terraform init (environments)
+        run: |
+          for env in environments/*/; do
+            if [ -f "${env}main.tf" ]; then
+              echo "Init: $env"
+              cd "$env" && terraform init -backend=false && cd -
+            fi
+          done
+
+      - name: Terraform validate (environments)
+        run: |
+          for env in environments/*/; do
+            if [ -f "${env}main.tf" ]; then
+              echo "Validate: $env"
+              cd "$env" && terraform validate && cd -
+            fi
+          done
+
+      - name: TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Run TFLint
+        run: tflint --recursive
+
+      - name: Security scan (Checkov)
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: terraform
+
+      - name: Terraform Docs check
+        uses: terraform-docs/gh-actions@v1
+        with:
+          config-file: .terraform-docs.yml
+          fail-on-diff: true
