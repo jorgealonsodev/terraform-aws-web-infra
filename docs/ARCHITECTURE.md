@@ -1,121 +1,123 @@
 # Architecture
 
-## Overview
+**Decision:** 3-tier isolation with security groups chained by ID — ALB in public subnets,
+EC2 in private subnets, RDS in isolated database subnets. No direct internet path to data.
 
-This project implements a **3-tier web architecture** on AWS using Terraform.
-The design separates the presentation, application, and data layers into isolated subnets
-to maximize security and availability.
+## Traffic Flow — Happy Path
 
-## Architecture Diagram
+1. Request → **ALB** (public subnet, port 80) → Target Group health check `/`
+2. ALB → **EC2** instance (private subnet, auto-scaled) → serves `nginx`
+3. EC2 → **RDS** (database subnet, no internet route, SG-restricted to `app_sg` only)
+4. EC2 → **NAT Gateway** → Internet (OS updates, external API calls)
+5. Static assets → **S3** (public access blocked, direct from app or CloudFront in future)
 
 ```
-                           Internet
-                              |
-                      [ Internet Gateway ]
-                              |
-         +--------------------+--------------------+
-         |          VPC  10.0.0.0/16               |
-         |                                         |
-         |   AZ-a                  AZ-b            |
-         |  +-----------+        +-----------+     |
-         |  | Subnet    |        | Subnet    |     |  <- PUBLIC Subnets
-         |  | public    |        | public    |     |     (ALB + NAT Gateway)
-         |  |  [ ALB ]  |        |  [ ALB ]  |     |
-         |  +-----+-----+        +-----+-----+     |
-         |        |                    |          |
-         |  +-----v-----+        +-----v-----+     |
-         |  | Subnet    |        | Subnet    |     |  <- PRIVATE Subnets
-         |  | private   |        | private   |     |     (EC2 in Auto Scaling Group)
-         |  | [ EC2 ]   |        | [ EC2 ]   |     |
-         |  +-----+-----+        +-----+-----+     |
-         |        |                    |          |
-         |  +-----v-----+        +-----v-----+     |
-         |  | Subnet    |        | Subnet    |     |  <- DATABASE Subnets (isolated)
-         |  | database  |        | database  |     |     (RDS Multi-AZ in prod)
-         |  +-----------+        +-----------+     |
-         +-----------------------------------------+
-
-         [ S3 Bucket ]  <- object storage (assets / logs)
+Internet → IGW → VPC 10.x.0.0/16
+  ├── Public subnets     → ALB (Internet-facing) + NAT Gateway
+  ├── Private subnets    → EC2 ASG (target group member)
+  ├── Database subnets   → RDS (isolated, no route to IGW or NAT)
+  └── [S3]               → Object storage (outside VPC)
 ```
 
-## Traffic Flow
+## Security Group Chain
 
-1. Inbound traffic reaches the **Application Load Balancer (ALB)** in the public subnets.
-2. The ALB distributes load across the **EC2** instances in the **Auto Scaling Group**, located in the private subnets.
-3. Instances access **RDS** in the database subnets, which are isolated with no direct internet access.
-4. Instances reach the internet (system updates, etc.) through the **NAT Gateway**.
-5. **S3** provides object storage for static assets and logs.
+```
+0.0.0.0/0 :80,443  →  [ alb_sg ]  →  [ app_sg ]  →  [ db_sg ]  →  No egress
+                         ▲                ▲               ▲
+                     public tier      private tier    database tier
+```
 
-## Design Decisions and Trade-offs
+| SG | Ingress from | Egress to | Purpose |
+|----|-------------|-----------|---------|
+| `alb_sg` | 0.0.0.0/0 :80,443 | All | Public entry point |
+| `app_sg` | `alb_sg` ID, port `app_port` | All | Application tier |
+| `db_sg` | `app_sg` ID, port `db_port` (5432) | VPC CIDR only | Database isolation |
+
+> **Key design choice:** cross-tier references use security group IDs, never CIDR blocks.
+> When an ASG replaces an EC2 instance with a new IP, the SG rules remain valid.
+
+## Design Decisions
 
 ### 3-tier subnet architecture
 
-**Decision:** Separate into public, private, and database subnets.
-
-**Why:** Layer isolation reduces the attack surface. An attacker compromising the ALB has no direct access to EC2 instances or the database.
-
-**Trade-off:** Higher network complexity and more resources (route tables, subnets) compared to a flat architecture.
+| | |
+|---|---|
+| **Decision** | Separate public, private, and database subnets |
+| **Why** | An attacker compromising the ALB has no direct network path to EC2 or RDS |
+| **Trade-off** | 3 route tables, 6+ subnets, 6 route table associations — more resources to manage |
 
 ### NAT Gateway: single vs multi-AZ
 
-**Decision:** A single NAT Gateway in dev/staging, one per AZ in prod.
-
-**Why:** NAT Gateway costs ~33 USD/month. In non-production environments, the savings justify the risk of a single point of failure. In production, availability takes priority.
-
-**Trade-off:** If the single NAT Gateway fails in dev/staging, private instances lose internet access until it recovers.
+| | |
+|---|---|
+| **Decision** | 1 NAT Gateway in dev/staging; 1 per AZ in prod |
+| **Why** | Each NAT costs ~$33/month. Non-prod can tolerate occasional internet loss. Prod cannot. |
+| **Trade-off** | If the single NAT fails in dev/staging, private instances lose internet until AWS recovers the AZ |
 
 ### RDS: single-AZ vs Multi-AZ
 
-**Decision:** RDS single-AZ in dev/staging, Multi-AZ in prod.
+| | |
+|---|---|
+| **Decision** | Single-AZ in dev/staging; Multi-AZ with automatic failover in prod |
+| **Why** | Multi-AZ doubles instance cost. Dev/staging don't need 99.95% uptime. |
+| **Trade-off** | AZ outage in dev/staging = database down until AWS recovers |
 
-**Why:** Multi-AZ doubles the RDS instance cost. In production, automatic failover justifies the additional cost.
+### Auto-generated passwords
 
-**Trade-off:** In dev/staging, an AZ outage means the database is unavailable until AWS recovers it.
-
-### Security Groups by reference (not by CIDR)
-
-**Decision:** Security groups reference each other by ID, not by IP range.
-
-**Why:** EC2 instance IPs can change (auto-scaling). Referencing by security group ID keeps rules correct regardless of IPs.
-
-**Trade-off:** Rules are harder to audit than flat CIDR-based rules.
-
-### Passwords managed automatically
-
-**Decision:** The RDS password is generated with `random_password` and stored in AWS Secrets Manager.
-
-**Why:** Avoids versioning secrets in the repository and ensures strong, unique passwords per deployment.
-
-**Trade-off:** Secrets Manager costs ~0.40 USD/month per secret and requires IAM access.
+| | |
+|---|---|
+| **Decision** | `random_password` (32 chars) → `var.db_password` → RDS + Secrets Manager |
+| **Why** | No secrets in git. No default passwords. Unique per deployment. |
+| **Trade-off** | Secrets Manager costs ~$0.40/month/secret. Operators need IAM access to retrieve it. |
 
 ### Remote state with locking
 
-**Decision:** S3 backend + DynamoDB for Terraform state.
+| | |
+|---|---|
+| **Decision** | S3 backend + DynamoDB lock table, one state key per environment |
+| **Why** | Prevents two people (or CI runs) from applying conflicting changes simultaneously |
+| **Trade-off** | Bootstrap script must run before first `terraform init` |
 
-**Why:** Enables team collaboration without state conflicts and protects against concurrent writes via DynamoDB locking.
+## Module Contracts
 
-**Trade-off:** Adds a dependency on S3 and DynamoDB before any `terraform init` can succeed.
+| Module | Creates | Key Outputs |
+|--------|---------|-------------|
+| **networking** | VPC, 3x2 subnets, IGW, NAT GW(s), EIPs, route tables, DB subnet group | `vpc_id`, `public_subnet_ids`, `private_subnet_ids`, `database_subnet_ids`, `db_subnet_group_name` |
+| **security** | 3 security groups with cross-references | `alb_sg_id`, `app_sg_id`, `db_sg_id` |
+| **storage** | S3 bucket + random suffix, versioning, SSE-S3, public block, lifecycle | `bucket_id`, `bucket_arn`, `bucket_domain_name` |
+| **database** | RDS PostgreSQL, Secrets Manager secret | `db_endpoint` (sensitive), `db_port`, `db_secret_arn` |
+| **compute** | ALB, Target Group, Listener, Launch Template (AL2023), ASG, IAM, CPU scaling policy | `alb_dns_name`, `alb_arn`, `asg_name`, `target_group_arn` |
 
-## Module Descriptions
+## Data Flow Between Modules
 
-| Module | Description |
-|--------|-------------|
-| **networking** | VPC, subnets (public/private/database), Internet Gateway, NAT Gateway(s), route tables, DB subnet group |
-| **security** | Security Groups for ALB, App, and DB with inter-tier isolation |
-| **storage** | Hardened S3 bucket with versioning, encryption, public access blocking, and lifecycle rules |
-| **database** | RDS PostgreSQL instance with encryption, auto-generated password, and Secrets Manager storage |
-| **compute** | ALB, Launch Template (Amazon Linux 2023), Auto Scaling Group, IAM role, CPU-based scaling policy |
+```
+networking ──vpc_id──────────────→ security, compute
+networking ──public_subnet_ids───→ compute (ALB)
+networking ──private_subnet_ids──→ compute (ASG)
+networking ──database_subnet_ids─→ (routing only)
+networking ──db_subnet_group────→ database
+security   ──alb_sg_id──────────→ compute
+security   ──app_sg_id──────────→ compute
+security   ──db_sg_id───────────→ database
+```
 
-## Environments
+## Environment Isolation
 
-| Parameter | dev | staging | prod |
-|-----------|-----|---------|------|
-| VPC CIDR | `10.0.0.0/16` | `10.1.0.0/16` | `10.2.0.0/16` |
-| NAT Gateway | Single | Single | Multi-AZ |
-| EC2 Instance | t3.micro | t3.micro | t3.small |
-| ASG min/desired/max | 1/1/2 | 1/2/3 | 2/2/6 |
-| RDS Instance | db.t3.micro | db.t3.micro | db.t3.small |
-| RDS Multi-AZ | No | No | Yes |
+Each environment has its own VPC CIDR block — no overlap, no cross-environment routing possible:
 
-Each environment invokes the same modules with different `terraform.tfvars` values.
-There is no infrastructure logic in the environment directories — configuration only.
+| Environment | VPC CIDR | Public subnets | Private subnets | Database subnets |
+|-------------|----------|----------------|-----------------|------------------|
+| dev | 10.0.0.0/16 | 10.0.1.0/24, 10.0.2.0/24 | 10.0.10.0/24, 10.0.11.0/24 | 10.0.20.0/24, 10.0.21.0/24 |
+| staging | 10.1.0.0/16 | 10.1.1.0/24, 10.1.2.0/24 | 10.1.10.0/24, 10.1.11.0/24 | 10.1.20.0/24, 10.1.21.0/24 |
+| prod | 10.2.0.0/16 | 10.2.1.0/24, 10.2.2.0/24 | 10.2.10.0/24, 10.2.11.0/24 | 10.2.20.0/24, 10.2.21.0/24 |
+
+## Verification Checklist
+
+- [ ] `make validate` passes on all 5 modules and 3 environments
+- [ ] `make fmt` produces no changes
+- [ ] `terraform plan` on `environments/dev` shows expected resources (no surprises)
+- [ ] `alb_dns_name` output resolves and shows nginx welcome page
+- [ ] `db_endpoint` is not visible in plain text (marked sensitive)
+- [ ] `db_secret_arn` points to a valid Secrets Manager secret
+- [ ] S3 bucket has `BlockPublicAccess` fully enabled
+- [ ] CI pipeline runs `fmt`, `validate`, `tflint`, and `checkov` on every push

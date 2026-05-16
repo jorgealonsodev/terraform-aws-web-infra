@@ -1,76 +1,78 @@
 # Cost Estimates
 
-> Indicative figures for the **eu-west-1 (Ireland)** region, May 2026.
-> Always verify with the [AWS Pricing Calculator](https://calculator.aws/#/).
-> Prices may vary.
+> **eu-west-1 (Ireland), May 2026.** Always verify with [AWS Pricing Calculator](https://calculator.aws/#/).
 
-## Summary per Environment (USD/month, approx.)
+**TL;DR:** dev and staging cost **$0 when destroyed**, ~$60-80/month when running.
+prod costs ~$150-200/month. The main cost drivers are NAT Gateway and ALB —
+neither is in the free tier.
 
-| Environment | Running continuously | Destroyed after use |
-|-------------|---------------------|----------------------|
-| dev         | ~60-80              | ~0                   |
-| staging     | ~60-80              | ~0                   |
-| prod        | ~150-200            | n/a                  |
+## Summary
 
-> **Note:** The ranges reflect variation in traffic (ALB LCUs) and NAT Gateway data usage.
+| Environment | Running 24/7 | Destroyed after use | Main cost driver |
+|-------------|-------------|----------------------|------------------|
+| dev | ~$60-80/mo | ~$0 | NAT Gateway + ALB |
+| staging | ~$60-80/mo | ~$0 | NAT Gateway + ALB |
+| prod | ~$150-200/mo | n/a | Dual NAT + Multi-AZ RDS + more EC2 |
 
-## Detailed Breakdown (dev environment)
+## Cost by Tier
 
-| Resource | Quantity | Free tier | Cost outside free tier |
-|----------|----------|-----------|-------------------------|
-| EC2 t3.micro | 1 | 750 hrs/month (t2/t3.micro, first 12 months) | ~0 USD/month (within free tier if applicable) |
-| ALB | 1 | **No** | ~16 USD/month (hours) + variable LCU (~0-10 USD) |
-| NAT Gateway | 1 | **No** | ~32 USD/month (hours) + data processed (~0-5 USD) |
-| RDS db.t3.micro | 1 | 750 hrs/month (first 12 months) | ~0 USD/month (within free tier if applicable) |
-| EBS gp3 (20 GB) | 1 | — | ~1.60 USD/month |
-| S3 Standard | 1 | 5 GB | negligible (< 0.03 USD/month) |
-| DynamoDB (lock table) | 1 | 25 WCU + 25 RCU | ~0 USD/month (within free tier) |
-| Elastic IP | 1 | 1 attached | ~0 USD/month |
-| Secrets Manager | 1 | — | ~0.40 USD/month |
-| **Estimated total** | | | **~50-65 USD/month** |
+### dev — Development
 
-### Important: NAT Gateway and ALB
+| Resource | Qty | Free tier? | Est. monthly cost | Notes |
+|----------|-----|-----------|-------------------|-------|
+| EC2 t3.micro | 1-2 | ✅ 750 hrs (first 12 months) | ~$0 | Within free tier |
+| NAT Gateway | 1 | ❌ | ~$33 | $0.045/hr × 730 + data |
+| ALB | 1 | ❌ | ~$16-26 | $0.0225/hr × 730 + LCU |
+| RDS db.t3.micro | 1 | ✅ 750 hrs (first 12 months) | ~$0 | 20 GB gp3 |
+| EBS gp3 | 20 GB | — | ~$1.60 | |
+| S3 | 1 | ✅ 5 GB | ~$0 | |
+| DynamoDB | 1 | ✅ 25 WCU/RCU | ~$0 | Lock table |
+| Secrets Manager | 1 | ❌ | ~$0.40 | |
+| **Total** | | | **~$50-65/mo** | |
 
-**NAT Gateway** and **Application Load Balancer** are **NOT included in the AWS free tier**.
-They are the largest cost component of this infrastructure:
+### staging — Pre-production
 
-- **NAT Gateway**: ~0.045 USD/hour × 730 hrs ≈ **32.85 USD/month** + data processing cost.
-- **ALB**: ~0.0225 USD/hour × 730 hrs ≈ **16.43 USD/month** + LCU (Load Balancer Capacity Units) cost.
+| Resource | Qty | Difference from dev | Additional cost |
+|----------|-----|---------------------|-----------------|
+| EC2 t3.micro | 1-3 | +1 instance possible | ~$0 (free tier) |
+| EBS gp3 | +20 GB | Extra storage | ~$1.60 |
+| Everything else | — | Same as dev | — |
+| **Total** | | | **~$52-67/mo** | |
 
-These resources are billed by the hour, regardless of whether there is traffic or not.
+### prod — Production
 
-## Staging Environment
+| Resource | Qty | Est. monthly cost | Notes |
+|----------|-----|-------------------|-------|
+| EC2 t3.small | 2-6 | ~$15-45 | Outside free tier |
+| NAT Gateway | 2 | ~$65 | One per AZ |
+| ALB | 1 | ~$16-26 | |
+| RDS db.t3.small (Multi-AZ) | 1 | ~$35 | Automatic failover |
+| EBS gp3 | 2 × 20 GB | ~$3.20 | |
+| S3 | 1 | ~$0 | |
+| Secrets Manager | 1 | ~$0.40 | |
+| **Total** | | **~$135-195/mo** | |
 
-Similar to dev but with an ASG of 2-3 instances (instead of 1-2):
+## ⚠️ NAT Gateway and ALB — Not Free Tier
 
-| Resource | Difference vs dev | Additional cost |
-|----------|-------------------|-----------------|
-| EC2 t3.micro | +1 additional instance | ~0 USD (free tier) |
-| EBS gp3 | +20 GB | ~1.60 USD/month |
-| ALB + NAT | Same | Same |
-| **Estimated total** | | **~52-67 USD/month** |
+These two resources account for **70-80% of your infrastructure cost:**
 
-## Production Environment
+| Resource | Hourly rate | Monthly (730 hrs) | Notes |
+|----------|------------|-------------------|-------|
+| NAT Gateway | $0.045/hr | **~$32.85** | + $0.045/GB data processed |
+| ALB | $0.0225/hr | **~$16.43** | + LCU charges (varies with traffic) |
 
-Production configuration with high availability:
+> Both are billed **by the hour, regardless of traffic**. Even an idle dev environment
+> with no requests costs ~$50/month just from NAT + ALB being provisioned.
 
-| Resource | Quantity | Estimated cost |
-|----------|----------|----------------|
-| EC2 t3.small | 2-6 | ~15-45 USD/month (outside free tier) |
-| ALB | 1 | ~16 USD/month + LCU |
-| NAT Gateway × 2 | 2 | ~65 USD/month + data |
-| RDS db.t3.small (Multi-AZ) | 1 | ~35 USD/month |
-| EBS gp3 (20 GB × 2) | 2 | ~3.20 USD/month |
-| S3 Standard | 1 | negligible |
-| Secrets Manager | 1 | ~0.40 USD/month |
-| **Estimated total** | | **~135-195 USD/month** |
+## Cost Control Playbook
 
-## Recommendations for Cost Control
-
-1. **Destroy non-production environments when not in use.** Running `terraform destroy` in `dev` and `staging` at the end of each development day eliminates cost entirely.
-2. **Use `single_nat_gateway = true` outside production.** A single NAT Gateway is enough for dev/staging and cuts the cost in half.
-3. **Schedule automatic destruction.** Consider a script or pipeline that destroys development environments after N hours of inactivity.
-4. **Monitor with AWS Cost Explorer.** Set up budget alerts to detect deviations early.
+| Strategy | Impact | How |
+|----------|--------|-----|
+| **Destroy when idle** | Saves 100% of running cost | `terraform destroy` in dev/staging at end of day |
+| **Single NAT outside prod** | Saves ~$33/mo per environment | Already configured (`single_nat_gateway = true`) |
+| **Right-size RDS** | db.t3.micro is ~$15/mo vs db.t3.small at ~$35/mo | Already configured for dev/staging |
+| **Budget alerts** | Catch surprises early | AWS Budgets → alert at 80% of expected monthly cost |
+| **Reserved Instances** | Save 30-40% on EC2/RDS | Consider for prod after 1-2 months of stable usage |
 
 ## Useful Links
 
@@ -80,10 +82,7 @@ Production configuration with high availability:
 
 ## Disclaimer
 
-The figures in this document are **indicative estimates** based on public AWS pricing for the eu-west-1 region as of May 2026. Actual prices may vary depending on:
-
-- Real traffic (ALB LCUs, NAT Gateway data)
-- AWS price changes
-- Taxes and volume discounts (Enterprise Discount Program, Reserved Instances, etc.)
-
-**Always verify current costs before making infrastructure decisions.**
+Figures are **indicative estimates** based on public eu-west-1 pricing as of May 2026.
+Actual costs vary with traffic volume (ALB LCU, NAT data processing), AWS price changes,
+and account-specific discounts (EDP, Reserved Instances, Savings Plans).
+**Verify current pricing before making infrastructure decisions.**

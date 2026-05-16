@@ -1,222 +1,142 @@
 # Terraform AWS Web Infrastructure
 
-Infrastructure as Code (IaC) for a 3-tier web architecture on AWS using Terraform.
+Infrastructure as Code that provisions a complete 3-tier AWS web architecture
+across 3 environments — from zero to running in ~10 minutes.
 
-## Architecture
-
-```
-                           Internet
-                              |
-                      [ Internet Gateway ]
-                              |
-         +--------------------+--------------------+
-         |          VPC  10.0.0.0/16               |
-         |                                         |
-         |   AZ-a                  AZ-b            |
-         |  +-----------+        +-----------+     |
-         |  | Subnet    |        | Subnet    |     |  <- PUBLIC Subnets
-         |  | public    |        | public    |     |     (ALB + NAT Gateway)
-         |  |  [ ALB ]  |        |  [ ALB ]  |     |
-         |  +-----+-----+        +-----+-----+     |
-         |        |                    |          |
-         |  +-----v-----+        +-----v-----+     |
-         |  | Subnet    |        | Subnet    |     |  <- PRIVATE Subnets
-         |  | private   |        | private   |     |     (EC2 in Auto Scaling Group)
-         |  | [ EC2 ]   |        | [ EC2 ]   |     |
-         |  +-----+-----+        +-----+-----+     |
-         |        |                    |          |
-         |  +-----v-----+        +-----v-----+     |
-         |  | Subnet    |        | Subnet    |     |  <- DATABASE Subnets (isolated)
-         |  | database  |        | database  |     |     (RDS Multi-AZ in prod)
-         |  +-----------+        +-----------+     |
-         +-----------------------------------------+
-
-         [ S3 Bucket ]  <- object storage (assets / logs)
-```
-
-**Traffic flow:**
-
-1. Inbound traffic reaches the **Application Load Balancer** in the public subnets.
-2. The ALB distributes load across the **EC2** instances in the **Auto Scaling Group**, located in the private subnets.
-3. Instances access **RDS** in the database subnets, which are isolated with no internet access.
-4. Instances reach the internet (system updates, etc.) through the **NAT Gateway**.
-5. **S3** provides object storage for static assets and logs.
-
-## Stack and Prerequisites
-
-- **Terraform** >= 1.7
-- **AWS Provider** ~> 5.x
-- **Region**: eu-west-1 (default)
-- **terraform-docs** — module documentation
-- **tflint** — Terraform linting
-- **Docker** (optional, for running Terraform via the `hashicorp/terraform` image)
-
-### Prerequisites
-
-- AWS CLI configured with appropriate credentials
-- AWS account with permissions to create VPC, EC2, RDS, S3, IAM, DynamoDB
-- Docker (if using containers)
-
-## Repository Structure
-
-```
-terraform-aws-web-infra/
-├── README.md
-├── PRD-terraform-aws-infra.md
-├── .gitignore
-├── .terraform-docs.yml
-├── .tflint.hcl
-├── Makefile
-├── versions.tf
-├── .github/
-│   └── workflows/
-│       └── ci.yml                  # CI pipeline (fmt, validate, lint, security)
-├── docs/
-│   ├── ARCHITECTURE.md             # Detailed architecture description
-│   └── COSTS.md                    # Cost estimates per environment
-├── scripts/
-│   ├── bootstrap-backend.sh        # Creates S3 bucket + DynamoDB state table
-│   └── gen-docs.sh                 # Runs terraform-docs on all modules
-├── modules/
-│   ├── networking/                 # VPC, subnets, gateways, routing
-│   ├── security/                   # Security Groups (ALB, App, DB)
-│   ├── compute/                    # ALB, ASG, Launch Template, IAM
-│   ├── database/                   # RDS + Secrets Manager
-│   └── storage/                    # S3 bucket (hardened)
-└── environments/
-    ├── dev/                        # Development environment
-    ├── staging/                    # Staging environment
-    └── prod/                       # Production environment
-```
-
-## Deployment Guide
-
-### Step 1: Configure AWS credentials
+## Quick Start
 
 ```bash
-# Option A: AWS CLI configured
+# 1. Configure AWS
 aws configure
+# or: export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=eu-west-1
 
-# Option B: Environment variables
-export AWS_ACCESS_KEY_ID="your-access-key"
-export AWS_SECRET_ACCESS_KEY="your-secret-key"
-export AWS_DEFAULT_REGION="eu-west-1"
-```
-
-### Step 2: Create the remote backend
-
-Run the bootstrap script **once** before the first `terraform init`:
-
-```bash
+# 2. Create remote state backend (once)
 ./scripts/bootstrap-backend.sh
-```
 
-This script creates:
-- A versioned and encrypted S3 bucket for state storage
-- A DynamoDB table for state locking (prevents concurrent writes)
+# 3. Edit environments/dev/backend.tf → replace bucket and dynamodb_table placeholders
 
-> The script is idempotent: if the bucket and table already exist, it does not error.
-
-### Step 3: Configure the backend
-
-Edit `environments/dev/backend.tf` and replace the placeholders:
-- `bucket` — name of the S3 bucket created in step 2
-- `dynamodb_table` — name of the DynamoDB table created in step 2
-
-Repeat for `staging` and `prod`.
-
-### Step 4: Deploy the environment
-
-```bash
-# Initialize Terraform
+# 4. Deploy dev
 cd environments/dev
-terraform init
+terraform init && terraform plan && terraform apply
 
-# Review the plan
-terraform plan
-
-# Apply the changes
-terraform apply
-```
-
-### Step 5: Verify the deployment
-
-After `apply`, the outputs show key information:
-
-```bash
-# The ALB DNS name (application entry point)
+# 5. Verify
 terraform output alb_dns_name
-
-# The database secret ARN
-terraform output db_secret_arn
+# Open the DNS in a browser → "Hello from ip-10-0-10-xxx"
 ```
 
-Open the ALB DNS in a browser to verify nginx is responding correctly.
+> **Repeat for staging and prod:** `cd environments/staging && terraform init && terraform plan && terraform apply`
 
-### Deploy staging and prod
+## What This Builds
+
+```
+Internet → IGW → VPC
+  ├── Public subnets  → ALB + NAT Gateway
+  ├── Private subnets → EC2 Auto Scaling Group
+  ├── Database subnets → RDS (isolated, no internet)
+  └── S3 bucket → object storage (assets / logs)
+```
+
+| Layer | Resource | Purpose |
+|-------|----------|---------|
+| Edge | Application Load Balancer | Entry point, distributes traffic |
+| Compute | EC2 + Auto Scaling Group | Runs the application, scales by CPU |
+| Data | RDS PostgreSQL | Relational database, encrypted at rest |
+| Storage | S3 | Static assets, versioned and encrypted |
+| Network | VPC + NAT Gateway + subnets | 3-tier isolation, private internet egress |
+
+## Repository Map
+
+```
+├── modules/          ← Reusable infrastructure (5 modules)
+│   ├── networking/   ← VPC, subnets, gateways, routing
+│   ├── security/     ← Security groups (ALB → App → DB chain)
+│   ├── compute/      ← ALB, ASG, Launch Template, IAM
+│   ├── database/     ← RDS + Secrets Manager
+│   └── storage/      ← Hardened S3 bucket
+├── environments/     ← Environment-specific configuration only
+│   ├── dev/          ← 10.0.0.0/16, t3.micro, single NAT
+│   ├── staging/      ← 10.1.0.0/16, t3.micro, single NAT
+│   └── prod/         ← 10.2.0.0/16, t3.small, multi-AZ, dual NAT
+├── scripts/
+│   ├── bootstrap-backend.sh ← Creates S3 + DynamoDB state backend
+│   └── gen-docs.sh          ← Regenerates terraform-docs
+├── .github/workflows/ci.yml ← CI: fmt, validate, lint, security scan
+├── docs/              ← Architecture decisions and cost estimates
+└── Makefile           ← fmt, validate, docs, init-dev, plan-dev, ...
+```
+
+## Makefile Quick Reference
+
+| Command | What it does |
+|---------|-------------|
+| `make fmt` | Format all `.tf` files |
+| `make validate` | Validate all modules and environments |
+| `make docs` | Regenerate terraform-docs in module READMEs |
+| `make init-dev` | `terraform init` for dev |
+| `make plan-dev` | `terraform plan` for dev |
+| `make clean` | Remove `.terraform/` directories and lock files |
+
+> Uses Docker images internally — no local Terraform installation required.
+
+## Environments at a Glance
+
+| Parameter | dev | staging | prod |
+|-----------|-----|---------|------|
+| VPC CIDR | 10.0.0.0/16 | 10.1.0.0/16 | 10.2.0.0/16 |
+| EC2 | t3.micro (1-2) | t3.micro (1-3) | t3.small (2-6) |
+| RDS | db.t3.micro, single-AZ | db.t3.micro, single-AZ | db.t3.small, Multi-AZ |
+| NAT Gateway | 1 | 1 | 2 (one per AZ) |
+| Deletion protection | Off | Off | On |
+
+## Cost Advisory
+
+> **NAT Gateway and ALB are NOT in the AWS free tier** — they cost ~$48-65/month combined even with zero traffic. Destroy non-production environments when not in use.
+
+| Environment | Running 24/7 | Destroyed |
+|-------------|-------------|-----------|
+| dev | ~$60-80/mo | ~$0 |
+| staging | ~$60-80/mo | ~$0 |
+| prod | ~$150-200/mo | n/a |
+
+See [docs/COSTS.md](docs/COSTS.md) for the full breakdown.
+
+## Design Decisions
+
+| Decision | Why | Trade-off |
+|----------|-----|-----------|
+| 3 subnet tiers | Attack surface reduction through layer isolation | More route tables and subnets |
+| Single NAT in dev/staging | Saves ~$33/mo per environment | Single point of failure outside prod |
+| Multi-AZ RDS only in prod | Automatic failover where uptime matters | Doubled RDS cost in prod |
+| SG references by ID | Survives IP changes from auto-scaling | Harder to audit than CIDR rules |
+| Auto-generated passwords | No secrets in git, unique per deployment | Requires Secrets Manager access (~$0.40/mo) |
+| Remote state in S3 + DynamoDB | Team-safe concurrent terraform runs | Dependency on bootstrap before first `init` |
+
+## Destroying
 
 ```bash
-cd environments/staging && terraform init && terraform plan && terraform apply
-cd environments/prod    && terraform init && terraform plan && terraform apply
+cd environments/dev && terraform destroy
 ```
 
-## Destroying Environments
+> **Irreversible.** All resources in the environment are permanently deleted. Verify backups first.
 
-> **Warning:** `terraform destroy` removes **all** resources in the environment.
-> This action is **irreversible**. Make sure you have backups before destroying.
+## Documentation
 
-```bash
-cd environments/dev
-terraform destroy
-```
-
-### Cost Notice
-
-**NAT Gateway** and **Application Load Balancer** are billed by the hour,
-even with no traffic (~16-35 USD/month each). If an environment will not be used
-for an extended period, run `terraform destroy` to avoid unnecessary costs.
-
-See [docs/COSTS.md](docs/COSTS.md) for detailed estimates per environment.
-
-## Additional Documentation
-
-- [Architecture](docs/ARCHITECTURE.md) — Detailed description, design decisions, and trade-offs
-- [Cost Estimates](docs/COSTS.md) — Monthly estimate per resource and per environment
-- [Module Documentation](modules/) — Each module has its own README with inputs, outputs, and resources
-
-## Design Decisions and Trade-offs
-
-| Decision | Reason | Trade-off |
-|----------|--------|-----------|
-| 3 subnet tiers | Security isolation between layers | Higher network complexity |
-| Single NAT in dev/staging | Reduces cost (~33 USD/month per NAT) | Single point of failure outside prod |
-| Multi-AZ RDS only in prod | High availability where it matters | Doubled RDS cost |
-| Security groups by ID | Works with dynamic ASG IPs | Rules harder to audit |
-| Auto-generated password | No secrets in the repository | Requires Secrets Manager access |
-| Remote state with locking | Team collaboration without conflicts | Dependency on S3 + DynamoDB |
+| Doc | Content |
+|-----|---------|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Detailed design decisions, traffic flow, trade-offs |
+| [COSTS.md](docs/COSTS.md) | Per-resource breakdown, free tier analysis, cost control tips |
+| `modules/*/README.md` | Auto-generated: inputs, outputs, providers, resources per module |
 
 ## Scope
 
-### Included in this phase
-
-- 3-tier web architecture (ALB → EC2 → RDS) with reusable modules
-- 3 environments (dev, staging, prod) with environment-specific configuration
-- Remote state in S3 with DynamoDB locking
-- Security groups with inter-tier isolation
-- Hardened S3 bucket with versioning and encryption
-- RDS with auto-generated password stored in Secrets Manager
-- Auto Scaling Group with CPU-based scaling policy
-- CI pipeline with format, syntax, linting, and security validation
-- Cost and architecture documentation
-
-### Out of scope (future phases)
-
-- HTTPS termination on the ALB with ACM certificate and Route 53 domain
-- Delivery pipeline: automatic `terraform plan` on each PR with manual `apply`
-- Migrating EC2 + ASG to containers (ECS Fargate or EKS)
-- OIDC authentication in CI instead of static access keys
-- Observability module: CloudWatch dashboards and alarms
-- Automated infrastructure tests with Terratest
+| Included | Deferred |
+|----------|----------|
+| 3-tier VPC with isolated subnets | HTTPS + ACM certificate + Route 53 domain |
+| Auto Scaling Group with CPU scaling | CD pipeline (auto-plan on PR, manual apply) |
+| RDS with encrypted storage + Secrets Manager | ECS Fargate / EKS migration |
+| CI pipeline (fmt, validate, lint, security) | OIDC auth in CI |
+| Hardened S3 bucket | CloudWatch dashboards and alarms |
+| Remote state with DynamoDB locking | Terratest integration |
 
 ## License
 
