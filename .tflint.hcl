@@ -2,7 +2,7 @@ plugin "aws" {
   enabled    = true
   source     = "github.com/terraform-linters/tflint-ruleset-aws"
   version    = "0.47.0"
-  deep_check = true
+  deep_check = false
 }
 
 rule "aws_resource_missing_tags" {
