@@ -12,6 +12,7 @@
 # to ensure reproducible provider versions across environments and CI.
 
 # IDE and editor files
+.atl/
 .idea/
 .vscode/
 *.swp
