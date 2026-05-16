@@ -1,13 +1,7 @@
-config {
-  plugin "aws" {
-    enabled = true
-    version = "latest"
-    source  = "github.com/terraform-linters/tflint-ruleset-aws"
-  }
-}
-
 plugin "aws" {
-  region = "eu-west-1"
+  enabled = true
+  version = "latest"
+  source  = "github.com/terraform-linters/tflint-ruleset-aws"
 
   deep_check = true
 
