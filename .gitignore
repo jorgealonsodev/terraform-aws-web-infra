@@ -3,7 +3,8 @@
 *.tfstate
 *.tfstate.backup
 *.tfstate.*
-*.tfvars
+*.auto.tfvars
+!terraform.tfvars
 
 # NOTE: .terraform.lock.hcl is intentionally NOT ignored — it must be versioned
 # to ensure reproducible provider versions across environments and CI.
