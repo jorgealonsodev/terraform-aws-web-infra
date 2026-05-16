@@ -61,10 +61,10 @@ resource "aws_db_instance" "main" {
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
   # Lifecycle
-  deletion_protection       = var.deletion_protection
+  deletion_protection        = var.deletion_protection
   auto_minor_version_upgrade = true
-  skip_final_snapshot       = var.skip_final_snapshot
-  final_snapshot_identifier = var.skip_final_snapshot ? null : "${local.name_prefix}-db-final-snapshot"
+  skip_final_snapshot        = var.skip_final_snapshot
+  final_snapshot_identifier  = var.skip_final_snapshot ? null : "${local.name_prefix}-db-final-snapshot"
 
   # Monitoring
   publicly_accessible = false
