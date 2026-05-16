@@ -15,6 +15,8 @@ resource "aws_security_group" "alb_sg" {
   description = "Security group for the Application Load Balancer"
   vpc_id      = var.vpc_id
 
+  # checkov:skip=CKV2_AWS_5:Security groups are attached via module references; Checkov cannot resolve cross-module state
+
   # Allow HTTP from anywhere
   ingress {
     description = "HTTP from anywhere"

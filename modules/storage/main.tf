@@ -23,6 +23,10 @@ resource "aws_s3_bucket" "main" {
   bucket        = "${local.name_prefix}-storage-${random_string.suffix.result}"
   force_destroy = var.force_destroy
 
+  # checkov:skip=CKV_AWS_18:Access logging requires a dedicated log bucket outside this module scope
+  # checkov:skip=CKV_AWS_145:AES256 SSE is already configured; KMS CMK is over-engineering for this project scope
+  # checkov:skip=CKV_AWS_144:Cross-region replication not required for this project scope
+
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-storage"
   })

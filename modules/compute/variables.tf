@@ -85,3 +85,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_deletion_protection" {
+  description = "Enable deletion protection on the ALB"
+  type        = bool
+  default     = false
+}

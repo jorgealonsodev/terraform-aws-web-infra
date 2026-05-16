@@ -14,6 +14,8 @@ resource "aws_secretsmanager_secret" "db_password" {
   name        = "${local.name_prefix}-db-password"
   description = "Master password for ${local.name_prefix} RDS instance"
 
+  # checkov:skip=CKV_AWS_149:Default SSE encryption is sufficient; KMS CMK adds cost without proportional benefit for this project
+
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-db-password"
   })
@@ -60,6 +62,7 @@ resource "aws_db_instance" "main" {
 
   # Lifecycle
   deletion_protection       = var.deletion_protection
+  auto_minor_version_upgrade = true
   skip_final_snapshot       = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : "${local.name_prefix}-db-final-snapshot"
 

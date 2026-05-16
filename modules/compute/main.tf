@@ -91,6 +91,13 @@ resource "aws_launch_template" "main" {
 
   user_data = base64encode(local.user_data)
 
+  # Enforce IMDSv2 — disable IMDSv1 (CKV_AWS_79)
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
   tag_specifications {
     resource_type = "instance"
     tags = merge(local.common_tags, {
@@ -165,6 +172,16 @@ resource "aws_lb" "main" {
   security_groups    = [var.alb_sg_id]
   subnets            = var.public_subnet_ids
 
+  # Drop invalid HTTP headers (CKV_AWS_131)
+  drop_invalid_header_fields = true
+
+  # Deletion protection (CKV_AWS_150) — controlled via variable
+  enable_deletion_protection = var.enable_deletion_protection
+
+  # Access logging disabled — no S3 log bucket provisioned in this module.
+  # Enable by setting access_logs block when a dedicated log bucket exists.
+  # checkov:skip=CKV_AWS_91:Access logging requires a dedicated S3 log bucket outside this module scope
+
   tags = merge(local.common_tags, {
     Name = "${local.name_prefix}-alb"
   })
@@ -178,6 +195,8 @@ resource "aws_lb_target_group" "main" {
   port     = var.app_port
   protocol = "HTTP"
   vpc_id   = var.vpc_id
+
+  # checkov:skip=CKV_AWS_378:Internal HTTP traffic between ALB and instances is intentional
 
   health_check {
     path                = "/"
@@ -201,6 +220,10 @@ resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
+
+  # checkov:skip=CKV_AWS_2:HTTP listener intentional; HTTPS requires ACM cert provisioned outside this module
+  # checkov:skip=CKV_AWS_103:HTTP listener intentional; HTTPS requires ACM cert provisioned outside this module
+  # checkov:skip=CKV2_AWS_20:HTTP redirect requires ACM cert outside this module scope
 
   default_action {
     type             = "forward"
